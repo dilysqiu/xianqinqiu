@@ -1,0 +1,487 @@
+---
+title: "DAT 500S Final Project"
+author: "Xianqin Qiu"
+date: "12/5/2020"
+output: html_document
+---
+
+
+```{r}
+
+library("readxl")
+library(MASS)
+library(nnet)
+
+ag <- read_excel("C:/Users/haoch/Desktop/DAT 500S Final Project/Training Data for Ag Project.xlsx")
+eva_ag <- read_excel("C:/Users/haoch/Desktop/DAT 500S Final Project/Evaluation dataset for Ag Project.xlsx")
+```
+
+
+I.Descriptive Analytics
+
+1. Plot  the  latitudes  and  longitudes  on  a  map  to  visualize  the  locations  of  farms. Identify where the target/evaluation farm is located. It should be noted that most of the farms are located in the Midwest of the US
+```{r}
+library(tidyverse)
+library(ggmap)
+register_google(key = "AIzaSyAzGLTzdEvYt3ghmGOt6YzmcuQH1Vsno_M")
+
+map <- get_googlemap("Missouri", maptype = "terrain", zoom = 5)  
+
+ggmap(map) + 
+  geom_point(data = ag, aes(x = Longitude, y = Latitude), color = "forestgreen", pch = 4, size = 1) +
+  geom_point(data = eva_ag, aes(x = Longitude, y = Latitude), color = "red", pch = 17, size = 3)
+```
+
+2. Generate frequency distribution for varieties. Decide if you have enough data for each variety to build dedicated prediction models for every variety.
+
+```{r}
+table(ag$Variety)/nrow(ag)
+plot(table(ag$Variety))
+```
+
+```{r}
+
+library(epiDisplay)
+table = tab1(ag$Variety, sort.group = "decreasing", cum.percent = TRUE)
+l = unlist(table[[2]])
+
+### combine variety that are less than 0.1%;
+smallvariety = rownames(l[l[,2]==0,0])
+for (i in (1:dim(ag)[1])){
+  if (ag$Variety[i] %in% smallvariety){
+    ag$Variety[i] = "smallvariety"
+  }}
+### after combing 
+table = tab1(ag$Variety, sort.group = "decreasing", cum.percent = TRUE)
+```
+
+```{r}
+which.is.max(unique(ag$Variety))
+```
+
+3. Check  to  see  if  there  is  any  relationship  between  the  locations  and  varieties. Explore  if  certain  varieties  are  grown  more  often  in  some  regions  than  in  other regions.
+
+```{r}
+ag$Location = as.factor(ag$Location)
+ag$Variety = as.factor(ag$Variety)
+str(ag)
+
+library(ggplot2)
+largevariety = rownames(l[1:10,])
+
+ggmap(map) + 
+  geom_point(data = ag, aes(x = Longitude, y = Latitude, color = Variety), size = 1)
+
+ggmap(map) + 
+  geom_point(data = ag[ag$Variety %in% largevariety,], aes(x = Longitude, y = Latitude, color = Variety), size = 1)
+```
+
+```{r}
+#Look  for  patterns  in  weather  variables.  Explore  relationships  between  locations and weather related variables.
+climate <- as.factor(Weather1)
+par(mfrow=c(2,1))
+ggmap(map) + 
+  geom_point(data = ag, aes(x = Longitude, y = Latitude, color = climate ), size = 1)
+
+ggmap(map) + 
+  geom_point(data = ag, aes(x = Longitude, y = Latitude, color = as.factor(Weather2)), size = 1)
+```
+
+```{r}
+#Plot the distribution of the yield variables. Based on the plot, what do you think a realistic goal for the optimal portfolio at the target farm
+
+par(mfrow=c(2,2))
+hist(ag$Variety_Yield)
+hist(ag$Commercial_Yield)
+hist(ag$Yield_Difference)
+hist(ag$Location_Yield)
+```
+
+
+
+III. Predictive Analytics
+
+
+```{r}
+
+orginalvars = c("GrowingSeason", "Location", "Genetics", "Experiment", "Latitude", "Longitude", "Variety","Variety_Yield", "Commercial_Yield", "Yield_Difference", "Location_Yield", "RelativeMaturity", "Weather1", "Weather2", "Probability", "RelativeMaturity25", "Prob_IRR", "Soil_Type", "Temp_03", "Temp_04", "Temp_05", "Temp_06", "Temp_07", "Temp_08", "Temp_09", "Median_Temp", "Prec_03", "Prec_04", "Prec_05", "Prec_06", "Prec_07", "Prec_08", "Prec_09", "Median_Prec", "Rad_03", "Rad_04" , "Rad_05", "Rad_06", "Rad_07", "Rad_08", "Rad_09", "Median_Rad", "Density", "Acres", "PH1", "AWC1", "Clay1", "Silt1", "Sand1", "Sand2", "Silt2", "Clay2", "PH2", "CEC", "CE" )
+
+vars = c("GrowingSeason", "Location", "Genetics", "Experiment", "Latitude", "Longitude", "RelativeMaturity", "Weather1", "Weather2", "Probability", "RelativeMaturity25", "Prob_IRR", "Soil_Type", "Temp_03", "Temp_04", "Temp_05", "Temp_06", "Temp_07", "Temp_08", "Temp_09", "Median_Temp", "Prec_03", "Prec_04", "Prec_05", "Prec_06", "Prec_07", "Prec_08", "Prec_09", "Median_Prec", "Rad_03", "Rad_04" , "Rad_05", "Rad_06", "Rad_07", "Rad_08", "Rad_09", "Median_Rad", "Density", "Acres", "PH1", "AWC1", "Clay1", "Silt1", "Sand1", "Sand2", "Silt2", "Clay2", "PH2", "CEC", "CE" )
+
+df <- ag[,c("Variety_Yield",vars)]
+```
+
+```{r}
+
+set.seed(1)
+train <- sample(1:nrow(df), nrow(df)/2)
+df.test <- df[-train, "Variety_Yield"]
+df.testnew <- as.numeric(unlist(df.test))
+
+f = as.formula(paste('Variety_Yield ~', 
+                     paste(names(df)[!names(df) %in% c("Variety_Yield")], collapse = '+')))
+
+
+df <- na.omit(df)
+
+```
+
+
+3.1 linear regression
+
+
+```{r}
+
+vars = c("Variety_Yield","GrowingSeason", "Location","Experiment", "Latitude", "Longitude","Weather1", "Weather2", "Probability", "RelativeMaturity25", "Prob_IRR", "Soil_Type", "Temp_03", "Temp_04", "Temp_05", "Temp_06", "Temp_07", "Temp_08", "Temp_09", "Median_Temp", "Prec_03", "Prec_04", "Prec_05", "Prec_06", "Prec_07", "Prec_08", "Prec_09", "Median_Prec", "Rad_03", "Rad_04" , "Rad_05", "Rad_06", "Rad_07", "Rad_08", "Rad_09", "Median_Rad", "Density", "Acres", "PH1", "AWC1", "Clay1", "Silt1", "Sand1", "Sand2", "Silt2", "Clay2", "PH2", "CEC", "CE" )
+
+name_variety <- unique(ag$Variety)
+
+ag_sort <- ag[order(ag$Variety),]
+ag_sort <- na.omit(ag_sort)
+table <- table(ag_sort$Variety) # counts of each variety
+num_variety <- matrix(0,length(name_variety),1)
+
+```
+
+```{r}
+
+library(MASS)
+
+mse.lr <- rep(NA, 120)
+sum.lr <- 0
+
+for (i in 1:length(name_variety)){
+  df.lr <- ag_sort[(sum.lr+1) :(sum.lr+table[i]),vars ]
+  sum.lr <- sum.lr + table[i]
+  
+  df.fit <- lm(Variety_Yield ~ . , data = df.lr)
+  mse.lr[i] <- mean(df.fit$residuals^2)
+
+}
+
+print(mse.lr)
+mean(mse.lr)
+
+```
+
+3.2 LASSO 
+
+```{r}
+
+
+df.train <- df[train,]
+y_train <- df.train$Variety_Yield
+x_train <-df.train[, vars]
+x_train <- model.matrix( ~ ., x_train)
+
+df.lasso <- glmnet(x_train,y_train, alpha = 0)
+plot(df.lasso)
+coef <- df.lassol$beta
+
+```
+
+```{r}
+
+
+train <- sample(1:nrow(df), nrow(df)/2)
+df.test <- df[-train, "Variety_Yield"]
+df.testnew <- as.numeric(unlist(df.test))
+df.train <- df[train,]
+
+y_train <- df.train$Variety_Yield
+x_train <-df.train[, vars]
+x_train <- model.matrix( ~ ., x_train)
+
+
+```
+
+```{r}
+
+library(Matrix)
+library(glmnet)
+
+mse.lasso <- rep(NA, 120)
+sum <- 0
+set.seed(1)
+
+for (i in 1:length(name_variety)){
+  df <- ag_sort[(sum+1) :(sum+table[i]), vars ]
+  sum<- sum + table[i]
+  
+  x <- model.matrix(Variety_Yield ~. , df)
+  y <- df$Variety_Yield
+  
+  train<- sample(1:nrow(df), nrow(df)/2)
+  test <- (-train)
+  
+  df.train <- df[train,]
+  df.test <- df[test, ]
+  
+  train.ridge <- model.matrix(Variety_Yield ~. , data = df.train)
+  test.ridge <- model.matrix(Variety_Yield ~. , data = df.test)
+  
+  lasso.mod <- glmnet(train.ridge, df.train$Variety_Yield, alpha = 1)
+  cv.out <- cv.glmnet(train.ridge, df.train$Variety_Yield, alpha = 1)
+  bestlam <- cv.out$lambda.min
+  
+  lasso.pred <- predict(lasso.mod, s = bestlam, newx = test.ridge)
+  mse.lasso[i] <- mean((lasso.pred - df.test$Variety_Yield)^2)
+  
+}
+
+print(mse.lasso)
+mean(mse.lasso)
+
+```
+
+3.3 Bagged tree & Random Forest 
+```{r}
+
+#bagged tree
+
+library(randomForest)
+set.seed(1)
+
+mse.random <- rep(NA, 120)
+sum <- 0
+set.seed(1)
+
+for (i in 1:length(name_variety)){
+  df <- ag_sort[(sum+1) :(sum+table[i]), vars ]
+  sum<- sum + table[i]
+  
+  train <- sample(1:nrow(df), nrow(df)/2)
+  df.test <- df[-train, "Variety_Yield"]
+  
+  bag.df <- randomForest(Variety_Yield ~. , data = df, subset = train, mtry = 48, importance = TRUE, na.action=na.exclude)
+
+  yhat.bag = predict(bag.df, newdata = df[-train, ] )
+  df.testnew <- as.numeric(unlist(df.test))
+  #plot(yhat.bag, df.testnew)
+
+  mse.random[i] <- mean((yhat.bag - df.testnew)^2)
+
+}
+
+print(mse.random)
+mean(mse.random)
+
+```
+```{r}
+
+# random forest
+
+mse.bagged <- rep(NA, 120)
+sum <- 0
+set.seed(1)
+
+for (i in 1:length(name_variety)){
+  df <- ag_sort[(sum+1) :(sum+table[i]), vars ]
+  sum<- sum + table[i]
+  
+  train <- sample(1:nrow(df), nrow(df)/2)
+  df.test <- df[-train, "Variety_Yield"]
+  
+  bag.df <- randomForest(Variety_Yield ~. , data = df, subset = train, mtry = 24, importance = TRUE, na.action=na.exclude)
+
+  yhat.bag = predict(bag.df, newdata = df[-train, ] )
+  df.testnew <- as.numeric(unlist(df.test))
+  #plot(yhat.bag, df.testnew)
+
+  mse.bagged[i] <- mean((yhat.bag - df.testnew)^2)
+
+}
+
+print(mse.bagged)
+mean(mse.bagged)
+
+```
+3.4 Boosted tree
+
+```{r}
+library(MASS)
+library(gbm)
+set.seed(1)
+
+
+mse.boosted <- rep(NA, 120)
+sum <- 0
+set.seed(1)
+
+for (i in 1:length(name_variety)){
+  df <- ag_sort[(sum+1) :(sum+table[i]), vars ]
+  sum<- sum + table[i]
+  
+  train <- sample(1:nrow(df), nrow(df)/2)
+  df.test <- df[-train, "Variety_Yield"]
+  df.testnew <- as.numeric(unlist(df.test))
+  
+  boost.df <- gbm(Variety_Yield ~. , df[train, ], distribution = "gaussian", n.trees = 5000, interaction.depth = 4, shrinkage = 0.2, verbose = F)
+  yhat.boost <- predict(boost.df, newdata = df[-train,] , n.trees = 100)
+  
+  mse.boosted[i] <- mean((yhat.boost-df.testnew)^2)
+  
+}
+
+
+
+```
+
+3.5 Regression tree
+
+```{r}
+
+library(MASS)
+library(tree)
+
+set.seed(1)
+
+mse.rt <- rep(NA, 120)
+sum <- 0
+
+for (i in 1:length(name_variety)){
+  df <- ag_sort[(sum+1) :(sum+table[i]), vars ]
+  sum<- sum + table[i]
+  
+  train <- sample(1:nrow(df), nrow(df)/2)
+  df.test <- df[-train, "Variety_Yield"]
+  df.testnew <- as.numeric(unlist(df.test))
+  
+  tree.df <- tree(Variety_Yield ~., df, subset = train)
+  #summary(tree.df)
+  yhat.tree <- predict(tree.df, newdata = df[-train,])
+  
+  mse.rt[i] <- mean((yhat.tree-df.testnew)^2)
+}
+
+print(mse.rt)
+mean(mse.rt)
+
+```
+
+3.6 cluster analysis
+
+```{r}
+
+ag_location <- ag[,c("Latitude", "Longitude")]
+target_location <- eva_ag[, c("Latitude", "Longitude")]
+location <- rbind.data.frame(ag_location, target_location)
+
+hc.average = hclust(dist(location), method = "average")
+#plot(hc.average)
+
+clu <- cutree(hc.average, 6)
+table(cutree(hc.average, 6))  
+
+clu.m <- as.data.frame(clu)
+# target farm in cluster 2
+
+colnames(clu.m) <- "cluster"
+df.target <- subset(clu.m, cluster == '2')
+
+df.target <- cbind(index = rownames(df.target), df.target)
+rownames(df.target) <- 1:nrow(df.target)
+df.target$cluster <- NULL
+
+#farm index within the same cluster with target farm
+index <- as.numeric(unlist(df.target))
+farm_index <- index[-length(index)]
+
+weather_vars <- c("Temp_03", "Temp_04", "Temp_05", "Temp_06", "Temp_07", "Temp_08", "Temp_09", "Median_Temp", "Prec_03", "Prec_04", "Prec_05", "Prec_06", "Prec_07", "Prec_08", "Prec_09", "Median_Prec", "Rad_03", "Rad_04" , "Rad_05", "Rad_06", "Rad_07", "Rad_08", "Rad_09", "Median_Rad")
+
+
+df.farm <- ag[farm_index, c("Variety_Yield", "Variety", weather_vars)]
+#target_weather <- eva_ag[, weather_vars]
+#df.target <- rbind.data.frame(target_weather, farm_weather)
+
+```
+
+prediction 
+
+```{r}
+
+# built new model for target farm 
+
+
+
+
+df.sort <- df.farm[order(df.farm$Variety),]
+df.sort <- df.sort[!(df.sort$Variety == 'V86'), ]
+df.sort <- df.sort[!(df.sort$Variety == 'V87'), ]
+df.sort <- df.sort[!(df.sort$Variety == 'V89'), ]
+df.sort <- na.omit(df.sort)
+variety_table <- table(df.sort$Variety) # counts of each variety
+name_variety <- unique(df.sort$Variety)
+num_variety <- matrix(0,length(name_variety),1)
+
+# use random forest to predict avg yield for each variety 
+
+library(randomForest)
+
+set.seed(1)
+yield.rf <- rep(NA, 113)
+std.yield <- rep(0, 113)
+sum <- 0
+
+for (i in 1:length(name_variety)){
+  df <- df.sort[(sum+1) :(sum+variety_table[i]), ]
+  sum<- sum + variety_table[i]
+  
+  train <- sample(1:nrow(df), nrow(df)/2)
+  
+  df.rf <- randomForest(Variety_Yield ~. , data = df, subset = train, mtry = 12, importance = TRUE, na.action=na.exclude)
+
+   yield.rf[i] <- predict(df.rf, newdata = df[-train, ] )
+}
+
+
+yield.rf
+std.yield
+
+tail(sort(yield.rf),5)
+head(sort(std.yield), 10)
+
+variety_yield <- cbind.data.frame(name_variety, yield.rf)
+yield_sd <- cbind.data.frame(name_variety, std.yield)
+```
+
+
+```{r}
+
+write.csv(yield_sd,"C:/Users/haoch/Desktop/DAT 500S Final Project/sd.csv", row.names = FALSE)
+write.csv(variety_yield,"C:/Users/haoch/Desktop/DAT 500S Final Project/yield.csv", row.names = FALSE)
+
+
+```
+
+
+Other Comments
+
+```{r}
+
+eva_vars <- colnames(eva_ag)
+ds <- ag[ag$Variety == "V102", c("Variety_Yield", "Variety", eva_vars)]
+str(ds)
+```
+
+```{r}
+library(MASS)
+
+set.seed(1)
+train <- sample(1:nrow(ds), nrow(ds)/2)
+ds.test <- ds[-train, "Variety_Yield"]
+
+f = as.formula(paste('Variety_Yield ~', 
+                     paste(names(ds)[!names(ds) %in% c("Variety_Yield")], collapse = '+')))
+
+```
+
+3.1 linear regression
+
+```{r}
+library(MASS)
+ds.fit <- lm(f, data = ds, subset = train)
+lm.pred <- predict(ds.fit, newdata = ds[-train,])
+mean((lm.pred - ds.test)^2)
+```
+
