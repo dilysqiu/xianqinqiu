@@ -1,5 +1,5 @@
 ---
-title: "DAT 500S Final Project"
+title: "Machine-learning-based simulation of soybean variety selection"
 author: "Xianqin Qiu"
 date: "12/5/2020"
 output: html_document
@@ -12,8 +12,8 @@ library("readxl")
 library(MASS)
 library(nnet)
 
-ag <- read_excel("C:/Users/haoch/Desktop/DAT 500S Final Project/Training Data for Ag Project.xlsx")
-eva_ag <- read_excel("C:/Users/haoch/Desktop/DAT 500S Final Project/Evaluation dataset for Ag Project.xlsx")
+ag <- read_excel("Training Data for Ag Project.xlsx")
+eva_ag <- read_excel("Evaluation dataset for Ag Project.xlsx")
 ```
 
 
@@ -444,44 +444,3 @@ head(sort(std.yield), 10)
 variety_yield <- cbind.data.frame(name_variety, yield.rf)
 yield_sd <- cbind.data.frame(name_variety, std.yield)
 ```
-
-
-```{r}
-
-write.csv(yield_sd,"C:/Users/haoch/Desktop/DAT 500S Final Project/sd.csv", row.names = FALSE)
-write.csv(variety_yield,"C:/Users/haoch/Desktop/DAT 500S Final Project/yield.csv", row.names = FALSE)
-
-
-```
-
-
-Other Comments
-
-```{r}
-
-eva_vars <- colnames(eva_ag)
-ds <- ag[ag$Variety == "V102", c("Variety_Yield", "Variety", eva_vars)]
-str(ds)
-```
-
-```{r}
-library(MASS)
-
-set.seed(1)
-train <- sample(1:nrow(ds), nrow(ds)/2)
-ds.test <- ds[-train, "Variety_Yield"]
-
-f = as.formula(paste('Variety_Yield ~', 
-                     paste(names(ds)[!names(ds) %in% c("Variety_Yield")], collapse = '+')))
-
-```
-
-3.1 linear regression
-
-```{r}
-library(MASS)
-ds.fit <- lm(f, data = ds, subset = train)
-lm.pred <- predict(ds.fit, newdata = ds[-train,])
-mean((lm.pred - ds.test)^2)
-```
-
