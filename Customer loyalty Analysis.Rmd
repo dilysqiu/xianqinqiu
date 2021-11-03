@@ -5,39 +5,404 @@ date: "3/17/2021"
 output: html_document
 ---
 
+define y variable
+```{r}
+
+#scale fm score, before
+mins <- apply(subuser_before[,c(5,6)], 2, min)
+maxs <- apply(subuser_before[,c(5,6)], 2, max)
+fm_scale<- data.frame(scale(subuser_before[,c(5,6)], center = mins, scale = maxs - mins))
+
+
+colnames(fm_scale)[1]='m_score'
+colnames(fm_scale)[2]='f_score'
+subuser_before = cbind(subuser_before, fm_scale)
+
+
+subuser_before$fm_score <- 1/2*subuser_before$f_score + 1/2*subuser_before$m_score
+
+subuser_before %>% filter(fm_score > 0.05594318)
+
+hist(subuser_before$fm_score, breaks = 200, 
+     xlab = 'fm_score', main = 'Distribution of fm_score')
+abline(v=mean(subuser_before$fm_score),col="blue",lwd=2)
+
+```
+
+```{r}
+
+subuser_before$frequency <- subuser_before$Purchase_time/(as.integer(as.Date(subuser_before$max_date)-as.Date(subuser_before$min_date) + 1)/7)
+
+subuser_after$frequency_after <- subuser_after$Purchase_time/(as.integer(as.Date(subuser_after$max_date)-as.Date(subuser_after$min_date) + 1)/7)
+
+#filter out outliers 
+subuser_before <- subuser_before %>% filter(Purchase_time <= 365) %>% filter(frequency <7)
+mean(subuser_before$Purchase_time)
+
+subuser_after <- subuser_after %>% filter(Purchase_time <= 365) %>% filter(frequency_after <7)
+mean(subuser_after$Purchase_time)
+
+#quintail 
+
+install.packages('statar')
+library(statar)
+
+#subuser_before <- subuser_before[, -c(7,8,9)]
+
+subuser_before <- subuser_before%>% 
+  mutate(freq_quin=xtile(f_score, 5),
+         mv_quin=xtile(m_score, 5))
+
+subuser_before <- subuser_before %>% 
+  mutate(fmindex_iq = 10*freq_quin + mv_quin)
+
+```
+
+x-variables
+Coupon_reemed_rate 
+```{r}
+
+test_coupon <- subset(data_after, select = c(sso_user_id, transaction_number, payment_method_used))
+test_coupon$payment_method_used <- toString(test_coupon$payment_method_used)
+test_coupon[is.na(test_coupon$payment_method_used)] <- 0
+
+test_order <- test_coupon %>% group_by(sso_user_id) %>% 
+  select(sso_user_id, transaction_number) %>% 
+  summarise(numorders = n_distinct(transaction_number))
+
+test_coupon <- distinct(test_coupon)
+
+test_coupon <- filter(test_coupon, grepl('COUPON', payment_method_used))
+
+test_coupon <- test_coupon %>% group_by(sso_user_id) %>% 
+  summarise(num_coupon_orders = n())
+
+test_promo <- left_join(test_order, test_coupon, by = 'sso_user_id')
+
+test_promo <- test_promo %>% mutate(redeemed_rate = num_coupon_orders/numorders)
+
+write_csv(test_promo, '/storage1/fs1/seethu/Active/Schnuckstar/test_coupon_redeemed_rate.csv')
+
+```
+
+num_store
 ```{r}
 
 library(dplyr)
-library(lubridate)
 
-data_before <- read.csv('/storage1/fs1/seethu/Active/Schnuckstar/transcation_(256-338)_before.csv')
-data_after <- read.csv('/storage1/fs1/seethu/Active/Schnuckstar/transcation_(256-338)_after.csv')
+data_before$date= as.Date(as.character(data_before$date))
+subset_b=subset(data_before,select=c(sso_user_id,date,transaction_number,store_id, total_dollar_spending))
 
-data_before <- data_before %>% select(, -1)
-data_after <- data_after %>% select(, -1)
+subset_b=distinct(subset_b)
 
-```
+data_after$date <- as.Date(as.character(data_after$date))
+subset_a <- subset(data_after, select=c(sso_user_id,date,transaction_number,store_id, total_dollar_spending))
 
-```{r}
-data_224 <- read.csv('/storage1/fs1/seethu/Active/Schnuckstar/TRANSACTION_LOYALTY_RANDOM_SAMPLE000000000224.csv')
-data_224$date <- sapply(data_224$transaction_dttm, function(x){strsplit(x," ")[[1]][[1]]})
-data_224$date <- as.Date(as.character(data_224$date))
-
-data_before_224 <- data_224 %>% 
-  filter(date >= as.Date('2019-03-01')) %>% 
-  filter(date <= as.Date('2020-02-29'))
-
-data_after_224 <- data_224 %>% 
-  filter(date >= as.Date('2020-03-01')) %>% 
-  filter(date <= as.Date('2021-02-28'))
-
-data_before <- rbind(data_before, data_before_224)
-data_after <- rbind(data_after, data_after_224)
+subset_a <- distinct(subset_a)
 ```
 
 ```{r}
 
-write.csv(data_before, '/storage1/fs1/seethu/Active/Schnuckstar/transcation_(256-338)_before.csv')
-write.csv(data_after, '/storage1/fs1/seethu/Active/Schnuckstar/transcation_(256-338)_after.csv')
+# Create the function.
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+#before
+store_info <- subset_b %>%
+  group_by(sso_user_id) %>% 
+  summarise(num_store = n_distinct(store_id), 
+            freq_store_id = getmode(store_id))
+
+subuser_before <- right_join(subuser_before, store_info, by = 'sso_user_id')
+
+#after
+store_info_after <- subset_a %>%
+  group_by(sso_user_id) %>% 
+  summarise(num_store = n_distinct(store_id), 
+            freq_store_id = getmode(store_id))
+
+subuser_after <- right_join(subuser_after, store_info_after, by = 'sso_user_id')
+
+
+
+write.csv(subuser_before, '/storage1/fs1/seethu/Active/Schnuckstar/subuser_before.csv')
+write.csv(subuser_after, '/storage1/fs1/seethu/Active/Schnuckstar/subuser_after.csv')
+
+```
+
+num_uniq_sku&num_uniq_sku_per_order
+```{r}
+library(dplyr)
+
+store_brand <- read.csv('/storage1/fs1/seethu/Active/Schnuckstar/STORE_BRAND_SKU000000000000.csv')
+
+data_before <- read.csv('/storage1/fs1/seethu/Active/Schnuckstar/transcation_before_test.csv')
+data_after <- read.csv('/storage1/fs1/seethu/Active/Schnuckstar/transcation_after_test.csv')
+
+brand_sku <- subset(store_brand, select = c(UPC_ID, SECTION_NUMBER, SECTION_NAME))
+brand_sku <- distinct(brand_sku)
+ 
+```
+
+```{r}
+
+#before
+num_item <- subset(data_before, select = c(sso_user_id, transaction_number, num_items_purchased, sku))
+
+num_sku <- num_item %>% group_by(sso_user_id) %>% 
+  summarise(num_uniq_sku = n_distinct(sku))
+
+num_sku_per_order <- num_item %>% group_by(sso_user_id, transaction_number) %>%
+  summarise(num_uniq_sku_per_order = n_distinct(sku))
+
+num_sku_per_order <- num_sku_per_order %>% group_by(sso_user_id) %>% 
+  summarise(purchase_time = n_distinct(transaction_number),
+            num_uniq_sku_per_order = sum(num_uniq_sku_per_order)/ purchase_time)
+
+subuser_before <- left_join(subuser_before, num_sku_per_order[, c(1,3)], by = 'sso_user_id')
+
+#after
+num_item <- subset(data_after, select = c(sso_user_id, transaction_number, num_items_purchased, sku))
+
+num_sku <- num_item %>% group_by(sso_user_id) %>% 
+  summarise(num_uniq_sku = n_distinct(sku))
+
+num_sku_per_order <- num_item %>% group_by(sso_user_id, transaction_number) %>%
+  summarise(num_uniq_sku_per_order = n_distinct(sku))
+
+num_sku_per_order <- num_sku_per_order %>% group_by(sso_user_id) %>% 
+  summarise(purchase_time = n_distinct(transaction_number),
+            num_uniq_sku_per_order = sum(num_uniq_sku_per_order)/ purchase_time)
+
+subuser_after <- left_join(subuser_after, num_sku, by = 'sso_user_id')
+subuser_after <- left_join(subuser_after, num_sku_per_order[, c(1,3)], by = 'sso_user_id')
+
+```
+
+brand_percent
+```{r}
+
+#before
+data_before$store_brand <- ifelse(data_before$sku %in% brand_sku$UPC_ID, 1, 0)
+
+data_before$date= as.Date(as.character(data_before$date))
+subset_b=subset(data_before,select=c(sso_user_id, date, transaction_number,store_id, total_dollar_spending,department_name, store_brand))
+
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+#before
+brand_info_before <- subset_b %>%
+  group_by(sso_user_id) %>% 
+  summarise( freq_depart = getmode(department_name) ,
+             brand_percent = sum(store_brand)/n() )
+
+brand_data_before <- data_before[data_before$sku %in% brand_sku$UPC_ID, ]
+
+brand_freq_before <- brand_data_before %>%
+  group_by(sso_user_id) %>% 
+  summarise(freq_brand_depart = getmode(department_name))
+
+brand_info_before <- left_join(brand_info_before, brand_freq_before, by = 'sso_user_id')
+
+subuser_before <- right_join(subuser_before, brand_info_before, by = 'sso_user_id')
+
+#after
+data_after$store_brand <- ifelse(data_after$sku %in% brand_sku$UPC_ID, 1, 0)
+
+data_after$date= as.Date(as.character(data_after$date))
+subset_a=subset(data_after,select=c(sso_user_id, date, transaction_number,store_id, total_dollar_spending,department_name, store_brand))
+
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+#before
+brand_info_after <- subset_a %>%
+  group_by(sso_user_id) %>% 
+  summarise( freq_depart = getmode(department_name) ,
+             brand_percent = sum(store_brand)/n() )
+
+brand_data_after <- data_after[data_after$sku %in% brand_sku$UPC_ID, ]
+
+brand_freq_after <- brand_data_after %>%
+  group_by(sso_user_id) %>% 
+  summarise(freq_brand_depart = getmode(department_name))
+
+brand_info_after <- left_join(brand_info_after, brand_freq_after, by = 'sso_user_id')
+subuser_after <- right_join(subuser_after, brand_info_after, by = 'sso_user_id')
+
+```
+
+descriptive analysis
+```{r}
+info <- subuser_before %>% group_by(fmindex_iq) %>% 
+  summarise(mean_brand_percent = mean(brand_percent), 
+            mean_num_store = mean(num_store), 
+            avg_basket_size = sum(monetary)/sum(Purchase_time))
+
+subuser_after <- na.omit(subuser_after)
+
+info_after <- subuser_after %>% group_by(fmindex_iq) %>% 
+  summarise(mean_brand_percent = mean(brand_percent), 
+            mean_num_store = mean(num_store), 
+            avg_basket_size = sum(monetary_after)/sum(Purchase_time))
+
+info <- left_join(info, info_after, by = 'fmindex_iq')
+
+write.csv(info, '/storage1/fs1/seethu/Active/Schnuckstar/descriptive.csv')
+
+subuser_before %>% group_by(fmindex_iq) %>% 
+  summarise(num_iq = n()) 
+
+```
+
+T-test
+```{r}
+subuser_before$avg_basket_size = subuser_before$monetary/subuser_before$Purchase_time
+subuser_after$avg_basket_size = subuser_after$monetary_after/subuser_after$Purchase_time
+
+iq11_before <- subuser_before %>% filter(fmindex_iq == 11)
+iq11_after <- subuser_after %>% filter(fmindex_iq == 11)
+
+t.test(iq11_before$avg_basket_size, iq11_after$avg_basket_size, paired = TRUE)
+t.test(iq11_before$brand_percent, iq11_after$brand_percent, paired = TRUE)
+t.test(iq11_before$num_store, iq11_after$num_store, paired = TRUE)
+
+```
+
+modeling
+
+```{r}
+lm_25 <- lm(fm_score ~ redeemed_rate + brand_percent + num_store + num_uniq_sku + num_uniq_sku_per_order, data = iq25_before)
+summary(lm_25)
+
+lm_24 <- lm(fm_score ~ redeemed_rate + brand_percent + num_store + num_uniq_sku + num_uniq_sku_per_order, data = iq24_before)
+summary(lm_24)
+
+lm_34 <- lm(fm_score ~ redeemed_rate + brand_percent + num_store + num_uniq_sku + num_uniq_sku_per_order, data = iq34_before)
+summary(lm_34)
+
+lm_35 <- lm(fm_score ~ redeemed_rate + brand_percent + num_store + num_uniq_sku + num_uniq_sku_per_order, data = iq35_before)
+summary(lm_35)
+
+lm_45 <- lm(fm_score ~ redeemed_rate + brand_percent + num_store + num_uniq_sku + num_uniq_sku_per_order, data = iq45_before)
+summary(lm_45)
+
+#after
+lm_25 <- lm(fm_score ~ redeemed_rate + brand_percent + num_store + num_uniq_sku + num_uniq_sku_per_order, data = iq25_after)
+summary(lm_25)
+
+lm_24 <- lm(fm_score ~ redeemed_rate + brand_percent + num_store + num_uniq_sku + num_uniq_sku_per_order, data = iq24_after)
+summary(lm_24)
+
+lm_34 <- lm(fm_score ~ redeemed_rate + brand_percent + num_store + num_uniq_sku + num_uniq_sku_per_order, data = iq34_after)
+summary(lm_34)
+
+lm_35 <- lm(fm_score ~ redeemed_rate + brand_percent + num_store + num_uniq_sku + num_uniq_sku_per_order, data = iq35_after)
+summary(lm_35)
+
+lm_45 <- lm(fm_score ~ redeemed_rate + brand_percent + num_store + num_uniq_sku + num_uniq_sku_per_order, data = iq45_after)
+summary(lm_45)
+
+
+```
+
+```{r}
+
+merge = left_join(subuser_before[,c(1,5,6,7,10,12,15,16,17,18,19,20,21)], subuser_after[,c(1,5,6,7,10,15,16,17,18,19,20,21,22)], by = 'sso_user_id')
+
+merge$diff_fmscore = merge$fm_score.y-merge$fm_score.x
+
+
+merge$diff_abs = merge$avg_basket_size.y-merge$avg_basket_size.x
+merge$diff_store = merge$num_store.y-merge$num_store.x
+merge$diff_brand = merge$brand_percent.y-merge$brand_percent.x
+merge$diff_redeem = merge$redeemed_rate.y-merge$redeemed_rate.x
+merge$diff_sku = merge$num_uniq_sku.y - merge$num_uniq_sku.x
+merge$diff_sku_per_order = merge$num_uniq_sku_per_order.y - merge$num_uniq_sku_per_order.x
+
+
+lm <- lm(diff_fmscore ~ num_store.y + brand_percent.y + redeemed_rate.y + avg_basket_size.y + num_uniq_sku.y + num_uniq_sku_per_order.y , data = merge)
+summary(lm)
+
+```
+
+```{r}
+
+merge$fmindex_combine <- merge$fmindex_iq*100 + merge$fmindex_iq_after
+
+merge %>% group_by(fmindex_combine) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count))
+
+
+merge_des <- merge %>% filter(freq_quin.x - freq_quin.y > 0 & mv_quin.x - mv_quin.y > 0)
+merge_incrs <- merge %>% filter(freq_quin.y - freq_quin.x > 0 & mv_quin.y - mv_quin.x > 0)
+
+
+lm_des <- lm(fm_score.y  ~ num_store.y + brand_percent.y + redeemed_rate.y + avg_basket_size.y + num_uniq_sku.y + num_uniq_sku_per_order.y , data = merge_des)
+summary(lm_des)
+
+lm_incrs <- lm(diff_fmscore  ~ num_store.y + brand_percent.y + redeemed_rate.y + avg_basket_size.y + num_uniq_sku.y + num_uniq_sku_per_order.y , data = merge_incrs)
+summary(lm_incrs)
+
+lm_incrs_y <- lm(fm_score.y  ~ num_store.y + brand_percent.y + redeemed_rate.y + avg_basket_size.y + num_uniq_sku.y + num_uniq_sku_per_order.y , data = merge_incrs)
+summary(lm_incrs_y)
+```
+
+```{r}
+
+merge$group <- 0
+
+merge$group <- ifelse(merge$freq_quin.y - merge$freq_quin.x > 0 & merge$mv_quin.y - merge$mv_quin.x > 0, 1, ifelse(merge$freq_quin.x - merge$freq_quin.y > 0 & merge$mv_quin.x - merge$mv_quin.y > 0, -1, 0))
+
+```
+
+tree
+```{r}
+
+set.seed(1)
+train <- sample(1:nrow(merge), nrow(merge)*0.8)
+sub_before_train <- merge[train,]
+sub_before_test <- merge[-train,]
+
+```
+
+```{r}
+library(tree)
+
+merge$group <- factor(merge$group)
+
+tree.carseats=tree(group ~  num_store.y + brand_percent.y + redeemed_rate.y + avg_basket_size.y + num_uniq_sku.y + num_uniq_sku_per_order.y, data = merge, subset = train )
+
+tree.pred=predict(tree.carseats, sub_before_test, type = "class")
+
+table(tree.pred,sub_before_test$group)
+
+mean(tree.pred==sub_before_test$group)
+
+summary(tree.carseats)
+tree.carseats
+plot(tree.carseats)
+text(tree.carseats)
+
+
+tree.diff =tree(group ~  diff_sku_per_order+diff_sku+diff_redeem+diff_brand+diff_store+diff_abs, data = merge, subset = train )
+tree.pred.diff=predict(tree.diff, sub_before_test, type = "class")
+
+table(tree.pred.diff,sub_before_test$group)
+
+mean(tree.pred.diff==sub_before_test$group)
+
+summary(tree.diff)
+plot(tree.diff)
+text(tree.diff)
+
 ```
 
