@@ -1,0 +1,43 @@
+---
+title: "Coding"
+author: "Xianqin Qiu"
+date: "3/17/2021"
+output: html_document
+---
+
+```{r}
+
+library(dplyr)
+library(lubridate)
+
+data_before <- read.csv('/storage1/fs1/seethu/Active/Schnuckstar/transcation_(256-338)_before.csv')
+data_after <- read.csv('/storage1/fs1/seethu/Active/Schnuckstar/transcation_(256-338)_after.csv')
+
+data_before <- data_before %>% select(, -1)
+data_after <- data_after %>% select(, -1)
+
+```
+
+```{r}
+data_224 <- read.csv('/storage1/fs1/seethu/Active/Schnuckstar/TRANSACTION_LOYALTY_RANDOM_SAMPLE000000000224.csv')
+data_224$date <- sapply(data_224$transaction_dttm, function(x){strsplit(x," ")[[1]][[1]]})
+data_224$date <- as.Date(as.character(data_224$date))
+
+data_before_224 <- data_224 %>% 
+  filter(date >= as.Date('2019-03-01')) %>% 
+  filter(date <= as.Date('2020-02-29'))
+
+data_after_224 <- data_224 %>% 
+  filter(date >= as.Date('2020-03-01')) %>% 
+  filter(date <= as.Date('2021-02-28'))
+
+data_before <- rbind(data_before, data_before_224)
+data_after <- rbind(data_after, data_after_224)
+```
+
+```{r}
+
+write.csv(data_before, '/storage1/fs1/seethu/Active/Schnuckstar/transcation_(256-338)_before.csv')
+write.csv(data_after, '/storage1/fs1/seethu/Active/Schnuckstar/transcation_(256-338)_after.csv')
+```
+
