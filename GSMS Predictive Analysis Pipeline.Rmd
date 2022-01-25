@@ -1,0 +1,163 @@
+---
+title: "GSMS Predictive Analysis"
+author: "Felix Zhang"
+date: "12/3/2021"
+output: html_document
+---
+
+```{r}
+rm(list = ls()) #clean the current environment
+
+library(dplyr) #library for df manipulation
+library(tidyverse) #library for df manipulation
+library(knitr) #library for nice-looking knitting result
+library(forecast) #library for time-series models
+library(TSstudio) #library for train-test split of ts
+library(lubridate)
+options(warn= -1)
+options(scipen = 999) #Non-Scientic Notation
+
+
+#load clean version of SCD monthly data
+VA.866514 = read.csv("C:/Users/haoch/Desktop/WUSTL/GSMS Project/data/VA.866514.csv", header = TRUE, sep = ",")
+
+```
+
+
+```{r}
+VA.866514$Date <- parse_date_time(VA.866514$Date, orders = "mdy")
+
+```
+
+```{r}
+#parse SCD dataframe into time-series
+
+VA.866514.ts = ts(VA.866514$SumTotalTabs, start = c(year(min(VA.866514$Date)), month(min(VA.866514$Date))), frequency = 12)
+
+```
+
+#Time Series Automatic Pipeline Predictive Analysis
+```{r}
+#model_f = function(tseries){  
+
+# k: window, n:length of ts, p:12 months
+k <- length(VA.866514.ts) -6
+n <- length(VA.866514.ts)
+p <- 12
+H <- 12
+
+# create matrice for each time-series model's expand and rolling window cv errors 
+mae_1_sarima <- matrix(NA,n-k,n-k)
+mae_2_sarima <- matrix(NA,n-k,n-k)
+mae_3_sarima <- 0
+mae_1_arima <- matrix(NA,n-k,n-k)
+mae_2_arima <- matrix(NA,n-k,n-k)
+mae_3_arima <- 0
+mae_1_hw <- matrix(NA,n-k,n-k)
+mae_2_hw <- matrix(NA,n-k,n-k)
+mae_3_hw <- 0
+
+
+# stop time object, used to identify stop time for train set and start time for test set
+st <- tsp(VA.866514.ts)[1]+(k-2)/p
+ 
+# seasonal arima model function, return the prediction of h period 
+sarima_f=function(x,h){
+  fit_1_sarima<-auto.arima(x,D = 1, max.D = 10, stepwise=FALSE,seasonal = TRUE,ic='aic',stationary = FALSE,allowdrift  = TRUE,lambda = NULL,biasadj = TRUE)
+
+  fct_1_sarima<-forecast(fit_1_sarima,h)
+return(fct_1_sarima)
+}
+
+
+# arima model function, return the prediction of h period 
+arima_f=function(x,h){
+  fit_1_arima<-auto.arima(x,D = 0, max.D = 10, stepwise=FALSE,seasonal = FALSE,ic='aic',stationary = FALSE,allowdrift  = TRUE,lambda = NULL,biasadj = TRUE)
+
+  fct_1_arima<-forecast(fit_1_arima,h)
+return(fct_1_arima)
+}
+
+
+# Holt Winters model function, return the prediction of h period
+hw_f = function(x,h){
+  fit_1_hw = hw(x,h,seasonal = c('additive'))
+ 
+   fct_1_hw = forecast(fit_1_hw,h)
+return(fct_1_hw)
+}
+
+
+
+# for each ts model, loop through 1:6 times, using expanding and rolling window cross validation methods
+for(i in 1:(n-k))
+{
+  #expanding window: 取最早开始售卖到2021年2月作为train1， i每增加1，train data多加一个月的sales，直到增加半年的sales留最后一个月作为 test
+  cv_train_1<-window(VA.866514.ts,end=st+i/p)
+  # rolling window: 固定train的size，用rolling， i每增加1 train set往后推一个月。
+  # i= 1 train 2017/1 - 2021/2; i = 6 train 2017/6 - 2021/7, 留2021/8作为test
+  cv_train_2<-window(VA.866514.ts,start=st+(i-k+1)/p,end=st+i/p)
+  # 根据上面train的方法，设置test data。 随着i增大，test set慢慢变小，直至最后只有8月作为test
+  cv_test<-window(VA.866514.ts,start=st+(i+1)/p,end=c(2021,8))
+  
+  
+  #error matrix里面每个cell 做一次 sarima，用的expanding window approach把error assign到对应的cell里
+  mae_1_sarima[i,1:length(cv_test)] <- abs(sarima_f(cv_train_1,H)[['mean']] - cv_test)
+  #error matrix里面每个cell 做一次 sarima，用的rolling window approach把error assign到对应的cell里
+  mae_2_sarima[i,1:length(cv_test)] <- abs(sarima_f(cv_train_2,H)[['mean']] - cv_test)
+  
+  #error matrix里面每个cell 做一次 arima，用的expanding window approach把error assign到对应的cell里
+  mae_1_arima[i,1:length(cv_test)] <- abs(arima_f(cv_train_1,H)[['mean']] - cv_test)
+  #error matrix里面每个cell 做一次 arima，用的rolling window approach把error assign到对应的cell里
+  mae_2_arima[i,1:length(cv_test)] <- abs(arima_f(cv_train_2,H)[['mean']] - cv_test)
+  
+  #error matrix里面每个cell 做一次 HoltWinters，用的expanding window approach把error assign到对应的cell里
+  mae_1_hw[i,1:length(cv_test)] <- abs(hw_f(cv_train_1,H)[['mean']] - cv_test)
+ #error matrix里面每个cell 做一次 HoltWinters，用的rolling window approach把error assign到对应的cell里
+  mae_2_hw[i,1:length(cv_test)] <- abs(hw_f(cv_train_2,H)[['mean']] - cv_test)
+  
+}
+
+# validation approach, take last 6 period as test
+cv_train_3 = ts_split(VA.866514.ts, sample.out = 6)$train
+cv_test_2 = ts_split(VA.866514.ts, sample.out = 6)$test
+
+mae_3_sarima = mean(abs(sarima_f(cv_train_3,H)[['mean']] - cv_test_2))
+mae_3_arima = mean(abs(arima_f(cv_train_3,H)[['mean']] - cv_test_2))
+mae_3_hw = mean(abs(hw_f(cv_train_3,H)[['mean']] - cv_test_2))
+
+#第一种validation的error的平均数
+error_sarima_exp<-mean(mae_1_sarima,na.rm = TRUE)
+#第二种 rolling forecast的error 的平均数
+error_sarima_rol<-mean(mae_2_sarima,na.rm = TRUE)
+#把两种validation 的平均数再求平均值得出这个model的 平均error
+error_sarima<-1/3*(error_sarima_exp+error_sarima_rol+mae_3_sarima)
+
+error_arima_exp<-mean(mae_1_arima,na.rm = TRUE)
+error_arima_rol<-mean(mae_2_arima,na.rm = TRUE)
+error_arima<-1/3*(error_arima_exp+error_arima_rol+mae_3_arima)
+
+error_hw_exp <- mean(mae_1_hw, na.rm=TRUE)
+error_hw_rol <- mean(mae_2_hw, na.rm=TRUE)
+error_hw <- 1/3*(error_hw_exp + error_hw_rol+mae_3_hw)
+
+
+#把所有model的error放一起，选出最低的error作为optiomal model
+err_term<-c('arima_f'=error_arima,'sarima_f'=error_sarima, 'hw_f' = error_hw) 
+
+best_name= names(err_term[which.min(err_term)])
+
+best_f <- match.fun(best_name)
+
+best_f(VA.866514.ts, H)
+autoplot(best_f(VA.866514.ts, H))
+summary(best_f(VA.866514.ts, H))
+
+```
+
+```{r}
+
+ets_f(VA.866514.ts)
+```
+
+
