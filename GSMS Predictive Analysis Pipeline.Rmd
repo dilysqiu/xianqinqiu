@@ -1,6 +1,6 @@
 ---
 title: "GSMS Predictive Analysis"
-author: "Felix Zhang"
+author: "Xianqin Qiu"
 date: "12/3/2021"
 output: html_document
 ---
@@ -92,28 +92,20 @@ return(fct_1_hw)
 # for each ts model, loop through 1:6 times, using expanding and rolling window cross validation methods
 for(i in 1:(n-k))
 {
-  #expanding window: 取最早开始售卖到2021年2月作为train1， i每增加1，train data多加一个月的sales，直到增加半年的sales留最后一个月作为 test
+  #expanding window: 
   cv_train_1<-window(VA.866514.ts,end=st+i/p)
-  # rolling window: 固定train的size，用rolling， i每增加1 train set往后推一个月。
-  # i= 1 train 2017/1 - 2021/2; i = 6 train 2017/6 - 2021/7, 留2021/8作为test
+  # rolling window: 
   cv_train_2<-window(VA.866514.ts,start=st+(i-k+1)/p,end=st+i/p)
-  # 根据上面train的方法，设置test data。 随着i增大，test set慢慢变小，直至最后只有8月作为test
   cv_test<-window(VA.866514.ts,start=st+(i+1)/p,end=c(2021,8))
   
   
-  #error matrix里面每个cell 做一次 sarima，用的expanding window approach把error assign到对应的cell里
   mae_1_sarima[i,1:length(cv_test)] <- abs(sarima_f(cv_train_1,H)[['mean']] - cv_test)
-  #error matrix里面每个cell 做一次 sarima，用的rolling window approach把error assign到对应的cell里
   mae_2_sarima[i,1:length(cv_test)] <- abs(sarima_f(cv_train_2,H)[['mean']] - cv_test)
   
-  #error matrix里面每个cell 做一次 arima，用的expanding window approach把error assign到对应的cell里
   mae_1_arima[i,1:length(cv_test)] <- abs(arima_f(cv_train_1,H)[['mean']] - cv_test)
-  #error matrix里面每个cell 做一次 arima，用的rolling window approach把error assign到对应的cell里
   mae_2_arima[i,1:length(cv_test)] <- abs(arima_f(cv_train_2,H)[['mean']] - cv_test)
   
-  #error matrix里面每个cell 做一次 HoltWinters，用的expanding window approach把error assign到对应的cell里
   mae_1_hw[i,1:length(cv_test)] <- abs(hw_f(cv_train_1,H)[['mean']] - cv_test)
- #error matrix里面每个cell 做一次 HoltWinters，用的rolling window approach把error assign到对应的cell里
   mae_2_hw[i,1:length(cv_test)] <- abs(hw_f(cv_train_2,H)[['mean']] - cv_test)
   
 }
@@ -126,11 +118,9 @@ mae_3_sarima = mean(abs(sarima_f(cv_train_3,H)[['mean']] - cv_test_2))
 mae_3_arima = mean(abs(arima_f(cv_train_3,H)[['mean']] - cv_test_2))
 mae_3_hw = mean(abs(hw_f(cv_train_3,H)[['mean']] - cv_test_2))
 
-#第一种validation的error的平均数
+
 error_sarima_exp<-mean(mae_1_sarima,na.rm = TRUE)
-#第二种 rolling forecast的error 的平均数
 error_sarima_rol<-mean(mae_2_sarima,na.rm = TRUE)
-#把两种validation 的平均数再求平均值得出这个model的 平均error
 error_sarima<-1/3*(error_sarima_exp+error_sarima_rol+mae_3_sarima)
 
 error_arima_exp<-mean(mae_1_arima,na.rm = TRUE)
@@ -142,7 +132,6 @@ error_hw_rol <- mean(mae_2_hw, na.rm=TRUE)
 error_hw <- 1/3*(error_hw_exp + error_hw_rol+mae_3_hw)
 
 
-#把所有model的error放一起，选出最低的error作为optiomal model
 err_term<-c('arima_f'=error_arima,'sarima_f'=error_sarima, 'hw_f' = error_hw) 
 
 best_name= names(err_term[which.min(err_term)])
